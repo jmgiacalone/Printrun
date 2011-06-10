@@ -52,35 +52,35 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         xcol=(245,245,108)
         ycol=(180,180,255)
         zcol=(180,255,180)
-        self.temps={"pla":"210","abs":"230","off":"0"}
-        self.bedtemps={"pla":"60","abs":"110","off":"0"}
+        self.temps={"pla":"210","abs":"260","off":"0"}
+        self.bedtemps={"pla":"60","abs":"140","off":"0"}
         self.cpbuttons=[
-        ["X+100",("move X 100"),(0,110),xcol,(55,25)],
-        ["X+10",("move X 10"),(0,135),xcol,(55,25)],
-        ["X+1",("move X 1"),(0,160),xcol,(55,25)],
-        ["X+0.1",("move X 0.1"),(0,185),xcol,(55,25)],
-        ["HomeX",("home X"),(0,210),(205,205,78),(55,25)],
-        ["X-0.1",("move X -0.1"),(0,235),xcol,(55,25)],
-        ["X-1",("move X -1"),(0,260),xcol,(55,25)],
-        ["X-10",("move X -10"),(0,285),xcol,(55,25)],
-        ["X-100",("move X -100"),(0,310),xcol,(55,25)],
-        ["Y+100",("move Y 100"),(55,110),ycol,(55,25)],
-        ["Y+10",("move Y 10"),(55,135),ycol,(55,25)],
-        ["Y+1",("move Y 1"),(55,160),ycol,(55,25)],
-        ["Y+0.1",("move Y 0.1"),(55,185),ycol,(55,25)],
-        ["HomeY",("home Y"),(55,210),(150,150,205),(55,25)],
-        ["Y-0.1",("move Y -0.1"),(55,235),ycol,(55,25)],
-        ["Y-1",("move Y -1"),(55,260),ycol,(55,25)],
-        ["Y-10",("move Y -10"),(55,285),ycol,(55,25)],
-        ["Y-100",("move Y -100"),(55,310),ycol,(55,25)],
-        ["Z+10",("move Z 10"),(110,110+25),zcol,(55,25)],
-        ["Z+1",("move Z 1"),(110,135+25),zcol,(55,25)],
-        ["Z+0.1",("move Z 0.1"),(110,160+25),zcol,(55,25)],
-        ["HomeZ",("home Z"),(110,185+25),(150,205,150),(55,25)],
-        ["Z-0.1",("move Z -0.1"),(110,210+25),zcol,(55,25)],
-        ["Z-1",("move Z -1"),(110,235+25),zcol,(55,25)],
-        ["Z-10",("move Z -10"),(110,260+25),zcol,(55,25)],
-        ["Home",("home"),(110,310),(250,250,250),(55,25)],
+#        ["X+100",("move X 100"),(0,110),xcol,(55,25)],
+#        ["X+10",("move X 10"),(0,135),xcol,(55,25)],
+#        ["X+1",("move X 1"),(0,160),xcol,(55,25)],
+#        ["X+0.1",("move X 0.1"),(0,185),xcol,(55,25)],
+        ["HomeX",("home X"),(0,240),(205,205,78),(65,25)],
+#        ["X-0.1",("move X -0.1"),(0,235),xcol,(55,25)],
+#        ["X-1",("move X -1"),(0,260),xcol,(55,25)],
+#        ["X-10",("move X -10"),(0,285),xcol,(55,25)],
+#        ["X-100",("move X -100"),(0,310),xcol,(55,25)],
+#        ["Y+100",("move Y 100"),(55,110),ycol,(55,25)],
+#        ["Y+10",("move Y 10"),(55,135),ycol,(55,25)],
+#        ["Y+1",("move Y 1"),(55,160),ycol,(55,25)],
+#        ["Y+0.1",("move Y 0.1"),(55,185),ycol,(55,25)],
+        ["HomeY",("home Y"),(70,240),(150,150,205),(65,25)],
+#        ["Y-0.1",("move Y -0.1"),(55,235),ycol,(55,25)],
+#        ["Y-1",("move Y -1"),(55,260),ycol,(55,25)],
+#        ["Y-10",("move Y -10"),(55,285),ycol,(55,25)],
+#        ["Y-100",("move Y -100"),(55,310),ycol,(55,25)],
+#        ["Z+10",("move Z 10"),(110,110+25),zcol,(55,25)],
+#        ["Z+1",("move Z 1"),(110,135+25),zcol,(55,25)],
+#        ["Z+0.1",("move Z 0.1"),(110,160+25),zcol,(55,25)],
+        ["HomeZ",("home Z"),(140,215+25),(150,205,150),(65,25)],
+#        ["Z-0.1",("move Z -0.1"),(110,210+25),zcol,(55,25)],
+#        ["Z-1",("move Z -1"),(110,235+25),zcol,(55,25)],
+#        ["Z-10",("move Z -10"),(110,260+25),zcol,(55,25)],
+        ["Home All",("home"),(210,240),(250,250,250),(85,25)],
         ["Extrude",("extrude"),(0,397+1),(225,200,200),(65,25)],
         ["Reverse",("reverse"),(0,397+28),(225,200,200),(65,25)],
         ]
@@ -96,8 +96,9 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         self.t=Tee(self.catchprint)
         self.stdout=sys.stdout
         self.mini=False
+        self.jogdict={"FL":"move X5 Y5","FR":"move X135 Y5","BL":"move X5 Y135","BR":"move X135 Y135","CENTRE":"move X70 Y70"}
+        self.zdist="0.1"
         
-    
     def do_extrude(self,l=""):
         try:
             if not (l.__class__=="".__class__ or l.__class__==u"".__class__) or (not len(l)):
@@ -256,12 +257,13 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         wx.StaticText(self.panel,-1,"mm",pos=(130,407))
         self.minibtn=wx.Button(self.panel,-1,"Mini mode",pos=(690,0))
         self.minibtn.Bind(wx.EVT_BUTTON,self.toggleview)
-        self.xyfeedc=wx.SpinCtrl(self.panel,-1,"3000",min=0,max=50000,size=(60,25),pos=(25,83))
+        self.xyfeedc=wx.SpinCtrl(self.panel,-1,"3000",min=0,max=50000,size=(60,25),pos=(25,105))
         wx.StaticText(self.panel,-1,"mm/min",pos=(130,407+27))
-        wx.StaticText(self.panel,-1,"mm/min",pos=(60,69))
-        wx.StaticText(self.panel,-1,"XY:",pos=(2,90-2))
-        wx.StaticText(self.panel,-1,"Z:",pos=(90,90-2))
-        self.zfeedc=wx.SpinCtrl(self.panel,-1,"200",min=0,max=50000,size=(60,25),pos=(105,83))
+        wx.StaticText(self.panel,-1,"mm/min",pos=(90,110))
+        wx.StaticText(self.panel,-1,"mm/min",pos=(280,110))
+        wx.StaticText(self.panel,-1,"XY:",pos=(2,110))
+        wx.StaticText(self.panel,-1,"Z:",pos=(200,110))
+        self.zfeedc=wx.SpinCtrl(self.panel,-1,"200",min=0,max=50000,size=(60,25),pos=(215,105))
         self.efeedc=wx.SpinCtrl(self.panel,-1,"300",min=0,max=50000,size=(60,25),pos=(70,397+28))
         self.efeedc.SetBackgroundColour((225,200,200))
         self.efeedc.SetForegroundColour("black")
@@ -270,8 +272,43 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         self.zfeedc.Bind(wx.EVT_SPINCTRL,self.setfeeds)
         self.zfeedc.SetBackgroundColour((180,255,180))
         self.zfeedc.SetForegroundColour("black")
-        
+        self.flbtn=wx.Button(self.panel,-1,"FL",size=(40,25),pos=(0,140))
+        self.flbtn.Bind(wx.EVT_BUTTON,self.onButton	)
+        self.frbtn=wx.Button(self.panel,-1,"FR",size=(40,25),pos=(100,140))
+        self.frbtn.Bind(wx.EVT_BUTTON,self.onButton	)
+        self.blbtn=wx.Button(self.panel,-1,"BL",size=(40,25),pos=(0,180))
+        self.blbtn.Bind(wx.EVT_BUTTON,self.onButton	)
+        self.brbtn=wx.Button(self.panel,-1,"BR",size=(40,25),pos=(100,180))
+        self.brbtn.Bind(wx.EVT_BUTTON,self.onButton	)
+        self.ctrbtn=wx.Button(self.panel,-1,"CENTRE",size=(40,25),pos=(50,160))
+        self.ctrbtn.Bind(wx.EVT_BUTTON,self.onButton )
+        self.manznegbtn=wx.Button(self.panel,-1,"Z-",size=(40,25),pos=(200,180))
+        self.manznegbtn.Bind(wx.EVT_BUTTON,self.jogzneg	)
+        self.manzposbtn=wx.Button(self.panel,-1,"Z+",size=(40,25),pos=(200,140))
+        self.manzposbtn.Bind(wx.EVT_BUTTON,self.jogzpos	)
+#        self.xdistslider=wx.Slider(self.panel, -1, 50, 0, 10, (100, 25), (120, 250),wx.SL_HORIZONTAL | wx.SL_AUTOTICKS | wx.SL_LABELS)
+        self.radiox1 = wx.RadioButton(self.panel, -1, "0.1", pos=(240, 140), style=wx.RB_GROUP)
+        self.radiox10 = wx.RadioButton(self.panel, -1, "1", pos=(240, 160))
+        self.radiox100 = wx.RadioButton(self.panel, -1, "10", pos=(240, 180))
+#        for eachRadio in [self.radiox1, self.radiox10, self.radiox100]:
+#            self.Bind(wx.EVT_RADIOBUTTON, self.OnRadio, eachRadio)
+    
         pass
+        
+    def onButton(self,event):
+        button = event.GetEventObject()
+        self.onecmd(self.jogdict[button.GetLabel()])
+         
+         
+    def OnRadio(self, event):
+       radioSelected = event.GetEventObject()
+       self.zdist=radioSelected.GetLabel()
+
+    def jogzneg(self,e):
+        self.onecmd("move Z -" + self.zdist)
+
+    def jogzpos(self,e):
+        self.onecmd("move Z " + self.zdist)
         
     def setfeeds(self,e):
         try:

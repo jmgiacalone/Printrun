@@ -30,7 +30,7 @@ class printcore():
         self.startcb=None#impl ()
         self.endcb=None#impl ()
         self.onlinecb=None#impl ()
-        self.loud=False#emit sent and received lines to terminal
+        self.loud=True#emit sent and received lines to terminal
         if port is not None and baud is not None:
             #print port, baud
             self.connect(port, baud)
