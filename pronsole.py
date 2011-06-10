@@ -617,6 +617,18 @@ class pronsole(cmd.Cmd):
         self.p.send_now("G1 "+axis+str(l[1])+" F"+str(feed))
         self.p.send_now("G90")
         
+    def do_move_abs(self,l):
+        if(len(l)<2):
+            print "No move specified."
+            return
+        if self.p.printing:
+            print "Printer is currently printing. Please pause the print before you issue manual commands."
+            return
+        if not self.p.online:
+            print "Printer is not online. Unable to move."
+            return
+        self.p.send_now(l)
+
     def help_move(self):
         print "Move an axis. Specify the name of the axis and the amount. "
         print "move X 10 will move the X axis forward by 10mm at ",self.feedxy,"mm/min (default XY speed)"
@@ -664,12 +676,12 @@ class pronsole(cmd.Cmd):
         if length > 0:
             print "Extruding %fmm of filament."%(length,)
         elif length <0:
-            print "Reversing %fmm of filament."%(-1*length,)
+            print "Reversing %fmm of filament."%(length,)
         else:
             "Length is 0, not doing anything."
-        self.p.send_now("G91")
+        #self.p.send_now("G91")
         self.p.send_now("G1 E"+str(length)+" F"+str(feed))
-        self.p.send_now("G90")
+        #self.p.send_now("G90")
         
     def help_extrude(self):
         print "Extrudes a length of filament, 5mm by default, or the number of mm given as a parameter"
@@ -816,20 +828,24 @@ class pronsole(cmd.Cmd):
         if "x" in l.lower():
             self.do_move("X -250")
             self.p.send_now("G92 X0")
-            self.do_move("X 1")
-            self.do_move("X -1")
+            self.do_move("X 5 200")
+            self.do_move("X -10 200")
+            self.do_move("X 0.1")
+            self.do_move("X -0.1")
             self.p.send_now("G92 X0")
         if "y" in l.lower():
             self.do_move("Y -250")
             self.p.send_now("G92 Y0")
-            self.do_move("Y 1")
-            self.do_move("Y -1")
+            self.do_move("Y 5 200")
+            self.do_move("Y -10 200")
+            self.do_move("Y 0.1")
+            self.do_move("Y -0.1")
             self.p.send_now("G92 Y0")
         if "z" in l.lower():
             self.do_move("Z -250")
-            send_now("G92 Z0")
-            self.do_move("Z 1")
-            self.do_move("Z -1")
+            self.p.send_now("G92 Z0")
+            self.do_move("Z 2")
+            self.do_move("Z -3")
             self.p.send_now("G92 Z0")
         if not len(l):
             self.p.send_now("G28")
