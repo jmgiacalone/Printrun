@@ -26,7 +26,7 @@ def getGeometricDifference( first, second ):
 	'Get the geometric difference of the two numbers.'
 	return max( first, second ) / min( first, second )
 
-def getGridHorizontalFrame( gridPosition ):
+def getGridHorizontalFrame(gridPosition):
 	'Get the grid horizontal object with a frame from the grid position.'
 	gridHorizontal = settings.GridHorizontal( 0, 0 )
 	gridHorizontal.master = settings.Tkinter.Frame( gridPosition.master, borderwidth = 1, padx = 3, relief = 'raised')
@@ -38,7 +38,6 @@ def getIsLayerStart(firstWord, skein, splitLine):
 	if skein.isThereALayerStartWord:
 		return firstWord == '(<layer>'
 	if firstWord != 'G1' and firstWord != 'G2' and firstWord != 'G3':
-	#if firstWord != 'G1' and firstWord != 'G2' and firstWord != 'G3' and firstWord[0] != 'X' and firstWord[0] != 'Y' and firstWord[0] != 'Z' and firstWord[0] != 'E':
 		return False
 	location = gcodec.getLocationFromSplitLine(skein.oldLocation, splitLine)
 	if location.z - skein.oldZ > 0.1:

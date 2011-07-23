@@ -279,7 +279,7 @@ class SkeinlayerSkein:
 	def linearMove( self, line, location ):
 		"Get statistics for a linear move."
 		if self.skeinPane != None:
-			self.addToPath( line, location )
+			self.addToPath(line, location)
 
 	def parseCorner(self, line):
 		"Parse a gcode line and use the location to update the bounding corners."
@@ -288,7 +288,6 @@ class SkeinlayerSkein:
 			return
 		firstWord = splitLine[0]
 		if firstWord == 'G1':
-		#if firstWord[0] == 'X' or firstWord[0] == 'Y' or firstWord[0] == 'Z' or firstWord[0] == 'E' or firstWord == 'G1':
 			self.linearCorner(splitLine)
 		elif firstWord == 'M101':
 			self.extruderActive = True
@@ -347,10 +346,9 @@ class SkeinlayerSkein:
 			self.layerCount.printProgressIncrement('skeinlayer')
 			self.skeinPane = []
 			self.skeinPanes.append( self.skeinPane )
-		#if firstWord == 'G1':
-		if firstWord[0] == 'X' or firstWord[0] == 'Y' or firstWord[0] == 'Z' or firstWord[0] == 'E' or firstWord == 'G1':
+		if firstWord == 'G1':
 			location = gcodec.getLocationFromSplitLine(self.oldLocation, splitLine)
-			self.linearMove( line, location )
+			self.linearMove(line, location)
 			self.oldLocation = location
 		elif firstWord == 'M101':
 			self.extruderActive = True
@@ -361,7 +359,7 @@ class SkeinlayerSkein:
 			relativeLocation = gcodec.getLocationFromSplitLine(self.oldLocation, splitLine)
 			relativeLocation.z = 0.0
 			location = self.oldLocation + relativeLocation
-			self.linearMove( line, location )
+			self.linearMove(line, location)
 			self.oldLocation = location
 
 
