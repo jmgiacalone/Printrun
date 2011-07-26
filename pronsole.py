@@ -37,6 +37,7 @@ class Settings:
         self.xy_feedrate = 9000
         self.z_feedrate = 200
         self.e_feedrate = 100
+        self.z_dist = 0.1
     def _set(self,key,value):
         try:
             value = getattr(self,"_%s_alias"%key)()[value]
@@ -80,8 +81,8 @@ class pronsole(cmd.Cmd):
         self.sdfiles=[]
         self.paused=False
         self.sdprinting=0
-        self.temps={"pla":"210","abs":"230","off":"0"}
-        self.bedtemps={"pla":"60","abs":"110","off":"0"}
+        self.temps={"pla":"200","abs":"265","off":"0"}
+        self.bedtemps={"pla":"95","abs":"140","off":"0"}
         self.percentdone=0
         self.tempreadings=""
         self.macros={}
