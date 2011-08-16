@@ -4,7 +4,7 @@ try:
 except:
     print "WX is not installed. This program requires WX to run."
     raise
-import printcore, os, sys, glob, time, threading, traceback, StringIO, gviz
+import printcore, os, sys, glob, time, threading, traceback, StringIO, gviz, traceback, cStringIO
 try:
     os.chdir(os.path.split(__file__)[0])
 except:
@@ -48,10 +48,12 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         self.filename=filename
         os.putenv("UBUNTU_MENUPROXY","0")
         wx.Frame.__init__(self,None,title="eMAKER Printer Interface",size=size);
+        self.SetIcon(wx.Icon("P-face.ico",wx.BITMAP_TYPE_ICO))
         self.panel=wx.Panel(self,-1,size=size)
         self.statuscheck=False
         self.tempreport=""
         self.monitor=0
+        self.monitor_interval=3
         self.paused=False
         self.cpbuttons=[
         ["HomeX",("home X"),(3,0),(205,205,78),(1,2)],
@@ -74,7 +76,22 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         customdict={}
         try:
             execfile("custombtn.txt",customdict)
-            self.custombuttons+=customdict["btns"]
+            if len(customdict["btns"]): 
+                if not len(self.custombuttons):
+                    try:
+                        self.custombuttons = customdict["btns"]
+                        for n in xrange(len(self.custombuttons)):
+                            self.cbutton_save(n,self.custombuttons[n])
+                        os.rename("custombtn.txt","custombtn.old")
+                        rco=open("custombtn.txt","w")
+                        rco.write("# I moved all your custom buttons into .pronsolerc.\n# Please don't add them here any more.\n# Backup of your old buttons is in custombtn.old\n")
+                        rco.close()
+                    except IOError,x:
+                        print str(x)
+                else:
+                    print "Note!!! You have specified custom buttons in both custombtn.txt and .pronsolerc"
+                    print "Ignoring custombtn.txt. Remove all current buttons to revert to custombtn.txt"
+                    
         except:
             pass
         self.popmenu()
@@ -82,7 +99,6 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         self.t=Tee(self.catchprint)
         self.stdout=sys.stdout
         self.mini=False
-        self.zdist="0.1"        
         self.p.sendcb=self.sentcb
 #        self.p.startcb=self.startcb
 #        self.starttime=0
@@ -180,28 +196,31 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         except:
             print "You must enter a temperature."
             
-#    def start_macro(self,macro_name,old_macro_definition=""):
-#        if not self.processing_rc:
-#            def cb(definition):
-#                if "\n" not in definition and len(definition.strip())>0:
-#                    macro_def = definition.strip()
-#                    self.cur_macro_def = macro_def
-#                    self.cur_macro_name = macro_name
-#                    if macro_def.startswith("!"):
-#                        self.cur_macro = "def macro(self,*arg):\n  "+macro_def[1:]+"\n"
-#                    else:
-#                        self.cur_macro = "def macro(self,*arg):\n  self.onecmd('"+macro_def+"'.format(*arg))\n"
-#                    self.end_macro()
-#                    return
-#                pronsole.pronsole.start_macro(self,macro_name,True)
-#                for line in definition.split("\n"):
-#                    if hasattr(self,"cur_macro_def"):
-#                        self.hook_macro(line)
-#                if hasattr(self,"cur_macro_def"):
-#                    self.end_macro()
-#            macroed(macro_name,old_macro_definition,cb)
-#        else:
-#            pronsole.pronsole.start_macro(self,macro_name,old_macro_definition)
+    def end_macro(self):
+        pronsole.pronsole.end_macro(self)
+        self.update_macros_menu()
+    
+    def delete_macro(self,macro_name):
+        pronsole.pronsole.delete_macro(self,macro_name)
+        self.update_macros_menu()
+    
+    def start_macro(self,macro_name,old_macro_definition=""):
+        if not self.processing_rc:
+            def cb(definition):
+                if len(definition.strip())==0:
+                    if old_macro_definition!="":
+                        dialog = wx.MessageDialog(self,"Do you want to erase the macro?",style=wx.YES_NO|wx.YES_DEFAULT|wx.ICON_QUESTION)
+                        if dialog.ShowModal()==wx.ID_YES:
+                            self.delete_macro(macro_name)
+                            return
+                    print "Cancelled."
+                    return
+                self.cur_macro_name = macro_name
+                self.cur_macro_def = definition
+                self.end_macro()
+            macroed(macro_name,old_macro_definition,cb)
+        else:
+            pronsole.pronsole.start_macro(self,macro_name,old_macro_definition)
     
     def catchprint(self,l):
         wx.CallAfter(self.logbox.AppendText,l)
@@ -223,13 +242,90 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
     def popmenu(self):
         self.menustrip = wx.MenuBar()
         m = wx.Menu()
-#        if sys.platform != 'darwin':
-        self.Bind(wx.EVT_MENU, lambda x:threading.Thread(target=lambda :self.do_skein("set")).start(), m.Append(-1,"Skeinforge settings"," Adjust skeinforge settings"))
-        self.Bind(wx.EVT_MENU, self.OnExit, m.Append(wx.ID_EXIT,"Close"," Closes the Window"))
+        self.Bind(wx.EVT_MENU, self.loadfile, m.Append(-1,"&Open..."," Opens file"))
+        self.Bind(wx.EVT_MENU, self.do_editgcode, m.Append(-1,"&Edit..."," Edit open file"))
+        if sys.platform != 'darwin':
+            self.Bind(wx.EVT_MENU, lambda x:threading.Thread(target=lambda :self.do_skein("set")).start(), m.Append(-1,"SFACT Settings"," Adjust SFACT settings"))
+            try:
+                from SkeinforgeQuickEditDialog import SkeinforgeQuickEditDialog
+                self.Bind(wx.EVT_MENU, lambda *e:SkeinforgeQuickEditDialog(self), m.Append(-1,"SFACT Quick Settings"," Quickly adjust SFACT settings for active profile"))
+            except:
+                pass
+
+        self.Bind(wx.EVT_MENU, self.OnExit, m.Append(wx.ID_EXIT,"E&xit"," Closes the Window"))
         self.menustrip.Append(m,"&Print")
+        m = wx.Menu()
+        self.macros_menu = wx.Menu()
+        m.AppendSubMenu(self.macros_menu, "&Macros")
+        self.Bind(wx.EVT_MENU, self.new_macro, self.macros_menu.Append(-1, "<&New...>"))
+        self.Bind(wx.EVT_MENU, lambda *e:options(self), m.Append(-1,"&Options"," Options dialog"))
+        self.menustrip.Append(m,"&Settings")
+        self.update_macros_menu()
         self.SetMenuBar(self.menustrip)
-        pass
     
+    
+    def doneediting(self,gcode):
+        f=open(self.filename,"w")
+        f.write("\n".join(gcode))
+        f.close()
+        wx.CallAfter(self.loadfile,None,self.filename)
+    
+    def do_editgcode(self,e=None):
+        if(self.filename is not None):
+            macroed(self.filename,self.f,self.doneediting,1)
+    
+    def new_macro(self,e=None):
+        dialog = wx.Dialog(self,-1,"Enter macro name",size=(200,100))
+        panel = wx.Panel(dialog,-1)
+        vbox = wx.BoxSizer(wx.VERTICAL)
+        wx.StaticText(panel,-1,"Macro name:",(8,14))
+        dialog.namectrl = wx.TextCtrl(panel,-1,'',(80,8),size=(100,24),style=wx.TE_PROCESS_ENTER)
+        hbox = wx.BoxSizer(wx.HORIZONTAL)
+        okb = wx.Button(dialog,wx.ID_OK,"Ok",size=(50,24))
+        dialog.Bind(wx.EVT_TEXT_ENTER,lambda e:dialog.EndModal(wx.ID_OK),dialog.namectrl)
+        #dialog.Bind(wx.EVT_BUTTON,lambda e:self.new_macro_named(dialog,e),okb)
+        hbox.Add(okb)
+        hbox.Add(wx.Button(dialog,wx.ID_CANCEL,"Cancel",size=(50,24)))
+        vbox.Add(panel)
+        vbox.Add(hbox,1,wx.ALIGN_CENTER|wx.TOP|wx.BOTTOM,10)
+        dialog.SetSizer(vbox)
+        dialog.Centre()
+        macro = ""
+        if dialog.ShowModal()==wx.ID_OK:
+            macro = dialog.namectrl.GetValue()
+            if macro != "":
+                wx.CallAfter(self.edit_macro,macro)
+        dialog.Destroy()
+        return macro
+        
+    def edit_macro(self,macro):
+        if macro == "": return self.new_macro()
+        if self.macros.has_key(macro):
+            old_def = self.macros[macro]
+        elif hasattr(self.__class__,"do_"+macro):
+            print "Name '"+macro+"' is being used by built-in command"
+            return
+        elif len([c for c in macro if not c.isalnum() and c != "_"]):
+            print "Macro name may contain only alphanumeric symbols and underscores"
+            return
+        else:
+            old_def = ""
+        self.start_macro(macro,old_def)
+        return macro
+        
+    def update_macros_menu(self):
+        if not hasattr(self,"macros_menu"):
+            return # too early, menu not yet built
+        try:
+            while True:
+                item = self.macros_menu.FindItemByPosition(1)
+                if item is None: return
+                self.macros_menu.DeleteItem(item)
+        except:
+            pass
+        for macro in self.macros.keys():
+            self.Bind(wx.EVT_MENU, lambda x,m=macro:self.start_macro(m,self.macros[m]), self.macros_menu.Append(-1, macro))
+
     def OnExit(self, event):
         self.Close()
 
@@ -258,6 +354,7 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
                 choices=scan,
                 style=wx.CB_DROPDOWN|wx.CB_SORT, pos=(50,0))
         try:
+            self.serialport.SetValue(scan[0])
             if self.settings.port:
                 self.serialport.SetValue(self.settings.port)
         except:
@@ -488,15 +585,15 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         self.p.send_now("M114")
 
     def do_fl(self,e):
-        self.onecmd("move_abs X5 Y5 F"+str(self.xyfeedc.GetValue()))
+        self.onecmd("move_abs G1 X5 Y5 F"+str(self.xyfeedc.GetValue()))
     def do_fr(self,e):
-        self.onecmd("move_abs X135 Y5 F"+str(self.xyfeedc.GetValue()))
+        self.onecmd("move_abs G1 X135 Y5 F"+str(self.xyfeedc.GetValue()))
     def do_bl(self,e):
-        self.onecmd("move_abs X5 Y135 F"+str(self.xyfeedc.GetValue()))
+        self.onecmd("move_abs G1 X5 Y135 F"+str(self.xyfeedc.GetValue()))
     def do_br(self,e):
-        self.onecmd("move_abs X135 Y135 F"+str(self.xyfeedc.GetValue()))
+        self.onecmd("move_abs G1 X135 Y135 F"+str(self.xyfeedc.GetValue()))
     def do_ctr(self,e):
-        self.onecmd("move_abs X70 Y70 F"+str(self.xyfeedc.GetValue()))
+        self.onecmd("move_abs G1 X70 Y70 F"+str(self.xyfeedc.GetValue()))
 
     def OnRadio(self, event):
        radioSelected = event.GetEventObject()
@@ -505,10 +602,11 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
        self.settings._set("z_dist",radioSelected.GetLabel())
 
     def do_zneg(self,e):
-        self.onecmd("move Z -" + self.zdist)
+        self.onecmd("move Z -" + str(self.settings.z_dist))
+        #print "move %" + self.zdist
 
     def do_zpos(self,e):
-        self.onecmd("move Z " + self.zdist)
+        self.onecmd("move Z " + str(self.settings.z_dist))
         
     def setfeeds(self,e):
         self.feedrates_changed = True
@@ -540,13 +638,184 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         
             #self.SetSize(winssize)
             self.minibtn.SetLabel("Full mode")
-                
+
+    def cbuttons_reload(self):
+        allcbs = []
+        ubs=self.upperbottomsizer
+        cs=self.centersizer
+        for item in ubs.GetChildren():
+            if hasattr(item.GetWindow(),"custombutton"):
+                allcbs += [(ubs,item.GetWindow())]
+        for item in cs.GetChildren():
+            if hasattr(item.GetWindow(),"custombutton"):
+                allcbs += [(cs,item.GetWindow())]
+        for sizer,button in allcbs:
+            #sizer.Remove(button)
+            button.Destroy()
+        for i in xrange(len(self.custombuttons)):
+            btndef = self.custombuttons[i]
+            try:
+                b=wx.Button(self.panel,-1,btndef[0])
+                if len(btndef)>2:
+                    b.SetBackgroundColour(btndef[2])
+                    rr,gg,bb=b.GetBackgroundColour().Get()
+                    if 0.3*rr+0.59*gg+0.11*bb < 60:
+                        b.SetForegroundColour("#ffffff")
+            except:
+                b=wx.Button(self.panel,-1,"")
+                b.Freeze()
+            b.custombutton=i
+            b.properties=btndef
+            b.Bind(wx.EVT_BUTTON,self.procbutton)
+            b.Bind(wx.EVT_MOUSE_EVENTS,self.editbutton)
+            if i<4:
+                ubs.Add(b)
+            else:
+                cs.Add(b,pos=(1+(i-4)/3,(i-4)%3),span=(1,1))
+        self.topsizer.Layout()
+    
+    def help_button(self):
+        print 'Defines custom button. Usage: button <num> "title" [/c "colour"] command'
+    
+    def do_button(self,argstr):
+        def nextarg(rest):
+            rest=rest.lstrip()
+            if rest.startswith('"'):
+               return rest[1:].split('"',1)
+            else:
+               return rest.split(None,1)
+        #try:
+        num,argstr=nextarg(argstr)
+        num=int(num)
+        title,argstr=nextarg(argstr)
+        colour=None
+        try:
+            c1,c2=nextarg(argstr)
+            if c1=="/c":
+                colour,argstr=nextarg(c2)
+        except:
+            pass
+        command=argstr.strip()
+        if num<0 or num>=64:
+            print "Custom button number should be between 0 and 63"
+            return
+        while num >= len(self.custombuttons):
+            self.custombuttons+=[None]
+        self.custombuttons[num]=[title,command]
+        if colour is not None:
+            self.custombuttons[num]+=[colour]
+        if not self.processing_rc:
+            self.cbuttons_reload()
+        #except Exception,x:
+        #    print "Bad syntax for button definition, see 'help button'"
+        #    print x
         
+
+    def cbutton_save(self,n,bdef,new_n=None):
+        if new_n is None: new_n=n
+        if bdef is None or bdef == "":
+            self.save_in_rc(("button %d" % n),'')
+        elif len(bdef)>2:
+            colour=bdef[2]
+            if type(colour) not in (str,unicode):
+                #print type(colour),map(type,colour)
+                if type(colour)==tuple and tuple(map(type,colour))==(int,int,int):
+                    colour = map(lambda x:x%256,colour)
+                    colour = wx.Colour(*colour).GetAsString(wx.C2S_NAME|wx.C2S_HTML_SYNTAX)
+                else:
+                    colour = wx.Colour(colour).GetAsString(wx.C2S_NAME|wx.C2S_HTML_SYNTAX)
+            self.save_in_rc(("button %d" % n),'button %d "%s" /c "%s" %s' % (new_n,bdef[0],colour,bdef[1]))
+        else:
+            self.save_in_rc(("button %d" % n),'button %d "%s" %s' % (new_n,bdef[0],bdef[1]))
+
+    def cbutton_edit(self,e,button=None):
+        bedit=ButtonEdit(self)
+        if button is not None:
+            n = button.custombutton
+            bedit.name.SetValue(button.properties[0])
+            bedit.command.SetValue(button.properties[1])
+            if len(button.properties)>2:
+                colour=button.properties[2]
+                if type(colour) not in (str,unicode):
+                    #print type(colour)
+                    if type(colour)==tuple and tuple(map(type,colour))==(int,int,int):
+                        colour = map(lambda x:x%256,colour)
+                        colour = wx.Colour(*colour).GetAsString(wx.C2S_NAME|wx.C2S_HTML_SYNTAX)
+                    else:
+                        colour = wx.Colour(colour).GetAsString(wx.C2S_NAME|wx.C2S_HTML_SYNTAX)
+                bedit.color.SetValue(colour)
+        else:
+            n = len(self.custombuttons)
+        if bedit.ShowModal()==wx.ID_OK:
+            if n==len(self.custombuttons):
+                self.custombuttons+=[None]
+            self.custombuttons[n]=[bedit.name.GetValue().strip(),bedit.command.GetValue().strip()]
+            if bedit.color.GetValue().strip()!="":
+                self.custombuttons[n]+=[bedit.color.GetValue()]
+            self.cbutton_save(n,self.custombuttons[n])
+        bedit.Destroy()
+        self.cbuttons_reload()
+
+    def cbutton_remove(self,e,button):
+        n = button.custombutton
+        self.custombuttons[n]=None
+        self.cbutton_save(n,None)
+        while self.custombuttons[-1] is None:
+            del self.custombuttons[-1]
+        self.cbuttons_reload()
+    
+    def cbutton_order(self,e,button,dir):
+        n = button.custombutton
+        if dir<0:
+            n=n-1
+        if n+1 >= len(self.custombuttons):
+            self.custombuttons+=[None] # pad
+        # swap
+        self.custombuttons[n],self.custombuttons[n+1] = self.custombuttons[n+1],self.custombuttons[n]
+        self.cbutton_save(n,self.custombuttons[n])
+        self.cbutton_save(n+1,self.custombuttons[n+1])
+        if self.custombuttons[-1] is None:
+            del self.custombuttons[-1]
+        self.cbuttons_reload()
+    
+    def editbutton(self,e):
+        if e.IsCommandEvent() or e.ButtonUp(wx.MOUSE_BTN_RIGHT):
+            if e.IsCommandEvent():
+                pos = (0,0)
+            else:
+                pos = e.GetPosition()
+            popupmenu = wx.Menu()
+            obj = e.GetEventObject()
+            if hasattr(obj,"custombutton"):
+                item = popupmenu.Append(-1,"Edit custom button '%s'" % e.GetEventObject().GetLabelText())
+                self.Bind(wx.EVT_MENU,lambda e,button=e.GetEventObject():self.cbutton_edit(e,button),item)
+                item = popupmenu.Append(-1,"Move left <<")
+                self.Bind(wx.EVT_MENU,lambda e,button=e.GetEventObject():self.cbutton_order(e,button,-1),item)
+                if obj.custombutton == 0: item.Enable(False)
+                item = popupmenu.Append(-1,"Move right >>")
+                self.Bind(wx.EVT_MENU,lambda e,button=e.GetEventObject():self.cbutton_order(e,button,1),item)
+                if obj.custombutton == 63: item.Enable(False)
+                pos = self.panel.ScreenToClient(e.GetEventObject().ClientToScreen(pos))
+                item = popupmenu.Append(-1,"Remove custom button '%s'" % e.GetEventObject().GetLabelText())
+                self.Bind(wx.EVT_MENU,lambda e,button=e.GetEventObject():self.cbutton_remove(e,button),item)
+            else:
+                item = popupmenu.Append(-1,"Add custom button")
+                self.Bind(wx.EVT_MENU,self.cbutton_edit,item)
+            self.panel.PopupMenu(popupmenu, pos)
+        else:
+           e.Skip()
+    
     def procbutton(self,e):
         try:
+            if hasattr(e.GetEventObject(),"custombutton"):
+                if wx.GetKeyState(wx.WXK_CONTROL) or wx.GetKeyState(wx.WXK_ALT):
+                    return self.editbutton(e)
+                self.cur_button=e.GetEventObject().custombutton
             self.onecmd(e.GetEventObject().properties[1])
+            self.cur_button=None
         except:
             print "event object missing"
+            self.cur_button=None
             raise
         
     def kill(self,e):
@@ -565,6 +834,23 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
             pass
         self.Destroy()
         
+    def do_monitor(self,l=""):
+        if l.strip()=="":
+            self.monitorbox.SetValue(not self.monitorbox.GetValue())
+        elif l.strip()=="off":
+            self.monitorbox.SetValue(False)
+        else:
+            try:
+                self.monitor_interval=float(l)
+                self.monitorbox.SetValue(self.monitor_interval>0)
+            except:
+                print "Invalid period given."
+        self.setmonitor(None)
+        if self.monitor:
+            print "Monitoring printer."
+        else:
+            print "Done monitoring."
+            
         
     def setmonitor(self,e):
         self.monitor=self.monitorbox.GetValue()
@@ -602,7 +888,7 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
                 if(self.monitor):
                     time.sleep(self.sleepslider.GetValue())
                 else:
-                    time.sleep(1)
+                    time.sleep(self.monitor_interval)
             wx.CallAfter(self.status.SetStatusText,"Not connected to printer.")
         except:
             pass #if window has been closed
@@ -708,7 +994,7 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         except:
             print "Skeinforge execution failed."
             self.stopsf=1
-            raise
+            traceback.print_exc(file=sys.stdout)
         
     def skein_monitor(self):
         while(not self.stopsf):
@@ -719,7 +1005,7 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
             time.sleep(0.1)
         fn=self.filename
         try:
-            self.filename=self.filename.replace(".stl","_export.gcode")
+            self.filename=self.filename.replace(".stl","_export.gcode").replace(".STL","_export.gcode")
             self.f=[i.replace("\n","").replace("\r","") for i in open(self.filename)]
 #            if self.p.online:
 #                    wx.CallAfter(self.printbtn.Enable)
@@ -746,7 +1032,7 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
         thread(target=self.skein_func).start()
         thread(target=self.skein_monitor).start()
         
-    def loadfile(self,event):
+    def loadfile(self,event,filename=None):
         basedir=self.settings.last_file_path
         if not os.path.exists(basedir):
             basedir = "."
@@ -756,8 +1042,11 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
                 pass
         dlg=wx.FileDialog(self,"Open file to print",basedir,style=wx.FD_OPEN|wx.FD_FILE_MUST_EXIST)
         dlg.SetWildcard("STL and GCODE files (;*.gcode;*.g;*.stl;*.STL;*.pla;*.abs")
-        if(dlg.ShowModal() == wx.ID_OK):
-            name=dlg.GetPath()
+        if(filename is not None or dlg.ShowModal() == wx.ID_OK):
+            if filename is not None:
+                name=filename
+            else:
+                name=dlg.GetPath()
             if not(os.path.exists(name)):
                 self.status.SetStatusText("File not found!")
                 return
@@ -778,8 +1067,9 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
                 threading.Thread(target=self.loadviz).start()
                 
     def loadviz(self):
+        print pronsole.totalelength(self.f),"mm of filament used in this print"
         self.gviz.clear()
-#        self.gwindow.p.clear()
+        self.gwindow.p.clear()
         for i in self.f:
             self.gviz.addgcode(i)
             self.gwindow.p.addgcode(i)
@@ -924,15 +1214,19 @@ class PronterWindow(wx.Frame,pronsole.pronsole):
                 self.printbtn.SetLabel("Print")
                 self.paused=0
             
-class macroed(wx.Frame):
+class macroed(wx.Dialog):
     """Really simple editor to edit macro definitions"""
-    def __init__(self,macro_name,definition,callback):
+    def __init__(self,macro_name,definition,callback,gcode=False):
         self.indent_chars = "  "
-        wx.Frame.__init__(self,None,title="macro %s" % macro_name)
+        title="  macro %s"
+        if gcode:
+            title="  %s"
+        self.gcode=gcode
+        wx.Dialog.__init__(self,None,title=title % macro_name,style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER)
         self.callback = callback
         self.panel=wx.Panel(self,-1)
         titlesizer=wx.BoxSizer(wx.HORIZONTAL)
-        title = wx.StaticText(self.panel,-1,"  macro %s: "%macro_name)
+        title = wx.StaticText(self.panel,-1,title%macro_name)
         title.SetFont(wx.Font(11,wx.NORMAL,wx.NORMAL,wx.BOLD))
         titlesizer.Add(title,1)
         self.okb = wx.Button(self.panel,-1,"Save")
@@ -944,17 +1238,24 @@ class macroed(wx.Frame):
         topsizer=wx.BoxSizer(wx.VERTICAL)
         topsizer.Add(titlesizer,0,wx.EXPAND)
         self.e=wx.TextCtrl(self.panel,style=wx.TE_MULTILINE+wx.HSCROLL,size=(200,200))
-        self.e.SetValue(self.unindent(definition))
+        if not self.gcode:
+            self.e.SetValue(self.unindent(definition))
+        else:
+            self.e.SetValue("\n".join(definition))
         topsizer.Add(self.e,1,wx.ALL+wx.EXPAND)
         self.panel.SetSizer(topsizer)
         topsizer.Layout()
         topsizer.Fit(self)
         self.Show()
+        self.e.SetFocus()
     def save(self,ev):
-        self.Close()
-        self.callback(self.reindent(self.e.GetValue()))
+        self.Destroy()
+        if not self.gcode:
+            self.callback(self.reindent(self.e.GetValue()))
+        else:
+            self.callback(self.e.GetValue().split("\n"))
     def close(self,ev):
-        self.Close()
+        self.Destroy()
     def unindent(self,text):
         import re
         self.indent_chars = text[:len(text)-len(text.lstrip())]
@@ -979,7 +1280,81 @@ class macroed(wx.Frame):
             reindented += self.indent_chars + line + "\n"
         return reindented
         
+class options(wx.Dialog):
+    """Options editor"""
+    def __init__(self,pronterface):
+        wx.Dialog.__init__(self,None,title="Edit settings")
+        topsizer=wx.BoxSizer(wx.VERTICAL)
+        vbox=wx.StaticBoxSizer(wx.StaticBox(self,label="Defaults"),wx.VERTICAL)
+        topsizer.Add(vbox,1,wx.ALL+wx.EXPAND)
+        grid=wx.GridSizer(rows=0,cols=2,hgap=8,vgap=2)
+        vbox.Add(grid,0,wx.EXPAND)
+        ctrls = {}
+        for k,v in pronterface.settings._all_settings().items():
+            grid.Add(wx.StaticText(self,-1,k),0,wx.BOTTOM+wx.RIGHT)
+            ctrls[k] = wx.TextCtrl(self,-1,str(v))
+            grid.Add(ctrls[k],1,wx.EXPAND)
+        topsizer.Add(self.CreateSeparatedButtonSizer(wx.OK+wx.CANCEL),0,wx.EXPAND)
+        self.SetSizer(topsizer)        
+        topsizer.Layout()
+        topsizer.Fit(self)
+        if self.ShowModal()==wx.ID_OK:
+            for k,v in pronterface.settings._all_settings().items():
+                if ctrls[k].GetValue() != str(v):
+                    pronterface.set(k,str(ctrls[k].GetValue()))
+        self.Destroy()
         
+class ButtonEdit(wx.Dialog):
+    """Custom button edit dialog"""
+    def __init__(self,pronterface):
+        wx.Dialog.__init__(self,None,title="Custom button",style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER)
+        self.pronterface=pronterface
+        topsizer=wx.BoxSizer(wx.VERTICAL)
+        vbox=wx.StaticBoxSizer(wx.StaticBox(self,label=""),wx.VERTICAL)
+        topsizer.Add(vbox,1,wx.ALL+wx.EXPAND)
+        grid=wx.FlexGridSizer(rows=0,cols=2,hgap=4,vgap=2)
+        grid.AddGrowableCol(1,1)
+        vbox.Add(grid,0,wx.EXPAND)
+        grid.Add(wx.StaticText(self,-1,"Button title"),0,wx.BOTTOM+wx.RIGHT)
+        self.name=wx.TextCtrl(self,-1,"")
+        grid.Add(self.name,1,wx.EXPAND)
+        grid.Add(wx.StaticText(self,-1,"Command"),0,wx.BOTTOM+wx.RIGHT)
+        self.command=wx.TextCtrl(self,-1,"")
+        xbox=wx.BoxSizer(wx.HORIZONTAL)
+        xbox.Add(self.command,1,wx.EXPAND)
+        self.command.Bind(wx.EVT_TEXT,self.macrob_enabler)
+        self.macrob=wx.Button(self,-1,"..",style=wx.BU_EXACTFIT)
+        self.macrob.Bind(wx.EVT_BUTTON,self.macrob_handler)
+        xbox.Add(self.macrob,0)
+        grid.Add(xbox)
+        grid.Add(wx.StaticText(self,-1,"Color"),0,wx.BOTTOM+wx.RIGHT)
+        self.color=wx.TextCtrl(self,-1,"")
+        grid.Add(self.color,1,wx.EXPAND)
+        topsizer.Add(self.CreateSeparatedButtonSizer(wx.OK+wx.CANCEL),0,wx.EXPAND)
+        self.SetSizer(topsizer)        
+        topsizer.Layout()
+        topsizer.Fit(self)
+    def macrob_enabler(self,e):
+        macro = self.command.GetValue()
+        valid = False
+        if macro == "":
+            valid = True
+        elif self.pronterface.macros.has_key(macro):
+            valid = True
+        elif hasattr(self.pronterface.__class__,"do_"+macro):
+            valid = False
+        elif len([c for c in macro if not c.isalnum() and c != "_"]):
+            valid = False
+        else:
+            valid = True
+        self.macrob.Enable(valid)
+    def macrob_handler(self,e):
+        macro = self.command.GetValue()
+        macro = self.pronterface.edit_macro(macro)
+        self.command.SetValue(macro)
+        if self.name.GetValue()=="":
+            self.name.SetValue(macro)
+    
 if __name__ == '__main__':
     app = wx.App(False)
     main = PronterWindow()

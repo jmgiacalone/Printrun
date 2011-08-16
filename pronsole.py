@@ -19,6 +19,21 @@ except:
 def dosify(name):
     return os.path.split(name)[1].split(".")[0][:8]+".g"
 
+def totalelength(g):
+    tot=0
+    cur=0
+    for i in g:
+        if "E" in i and ("G1" in i or "G0" in i):
+            try:
+                cur=float(i.split("E")[1].split(" ")[0])
+            except:
+                pass
+            #end try
+            tot+=cur
+        #end if
+    return tot
+
+
 class Settings:
     #def _temperature_alias(self): return {"pla":210,"abs":230,"off":0}
     #def _temperature_validate(self,v):
@@ -65,6 +80,8 @@ class Settings:
         except AttributeError:
             pass
         return []
+    def _all_settings(self):
+        return dict([(k,getattr(self,k)) for k in self.__dict__.keys() if not k.startswith("_")])
 
 class pronsole(cmd.Cmd):
     def __init__(self):
@@ -81,8 +98,8 @@ class pronsole(cmd.Cmd):
         self.sdfiles=[]
         self.paused=False
         self.sdprinting=0
-        self.temps={"pla":"200","abs":"265","off":"0"}
-        self.bedtemps={"pla":"95","abs":"140","off":"0"}
+        self.temps={"clean":"78","pla":"200","abs":"265","off":"0"}
+        self.bedtemps={"warm":"45","pla":"95","abs":"140","off":"0"}
         self.percentdone=0
         self.tempreadings=""
         self.macros={}
@@ -152,11 +169,6 @@ class pronsole(cmd.Cmd):
             self.end_macro()
             # pass the unprocessed line to regular command processor to not require empty line in .pronsolerc
             return self.onecmd(l)
-        if ls.startswith('#'): return
-        if ls.startswith('!'):
-            self.cur_macro += ws + ls[1:] + "\n" # python mode
-        else:
-            self.cur_macro += ws + 'self.onecmd("'+ls+'".format(*arg))\n' # parametric command mode
         self.cur_macro_def += l + "\n"
     
     def end_macro(self):    
@@ -164,7 +176,7 @@ class pronsole(cmd.Cmd):
         self.prompt="PC>"
         if self.cur_macro_def!="":
             self.macros[self.cur_macro_name] = self.cur_macro_def
-            exec self.cur_macro
+            macro = self.compile_macro(self.cur_macro_name,self.cur_macro_def)
             setattr(self.__class__,"do_"+self.cur_macro_name,lambda self,largs,macro=macro:macro(self,*largs.split()))
             setattr(self.__class__,"help_"+self.cur_macro_name,lambda self,macro_name=self.cur_macro_name: self.subhelp_macro(macro_name))
             if not self.processing_rc:
@@ -181,17 +193,49 @@ class pronsole(cmd.Cmd):
                     self.save_in_rc(macro_key,macro_def)
         else:
             print "Empty macro - cancelled"
-        del self.cur_macro,self.cur_macro_name,self.cur_macro_def
+        del self.cur_macro_name,self.cur_macro_def
+    
+    def compile_macro_line(self,line):
+        line = line.rstrip()
+        ls = line.lstrip()
+        ws = line[:len(line)-len(ls)] # just leading whitespace
+        if ls=="" or ls.startswith('#'): return "" # no code
+        if ls.startswith('!'):
+            return ws + ls[1:] + "\n" # python mode
+        else:
+            return ws + 'self.onecmd("'+ls+'".format(*arg))\n' # parametric command mode
+    
+    def compile_macro(self,macro_name,macro_def):
+        if macro_def.strip() == "":
+            print "Empty macro - cancelled"
+            return
+        pycode = "def macro(self,*arg):\n"
+        if "\n" not in macro_def.strip():
+            pycode += self.compile_macro_line("  "+macro_def.strip())
+        else:
+            lines = macro_def.split("\n")
+            for l in lines:
+                pycode += self.compile_macro_line(l)
+        exec pycode
+        return macro
         
     def start_macro(self,macro_name,prev_definition="",suppress_instructions=False):
         if not self.processing_rc and not suppress_instructions:
             print "Enter macro using indented lines, end with empty line"
         self.cur_macro_name = macro_name
         self.cur_macro_def = ""
-        self.cur_macro = "def macro(self,*arg):\n"
         self.onecmd = self.hook_macro # override onecmd temporarily
         self.prompt="..>"
         
+    def delete_macro(self,macro_name):
+        if macro_name in self.macros.keys():
+            delattr(self.__class__,"do_"+macro_name)
+            del self.macros[macro_name]
+            print "Macro '"+macro_name+"' removed"
+            if not self.processing_rc and not self.processing_args:
+                self.save_in_rc("macro "+macro_name,"")
+        else:
+            print "Macro '"+macro_name+"' is not defined"
     def do_macro(self,args):
         if args.strip()=="":
             self.print_topics("User-defined macros",self.macros.keys(),15,80)
@@ -204,24 +248,13 @@ class pronsole(cmd.Cmd):
         if len(arglist) == 2:
             macro_def = arglist[1]
             if macro_def.lower() == "/d":
-                if macro_name in self.macros.keys():
-                    delattr(self.__class__,"do_"+macro_name)
-                    del self.macros[macro_name]
-                    print "Macro '"+macro_name+"' removed"
-                    if not self.processing_rc and not self.processing_args:
-                        self.save_in_rc("macro "+macro_name,"")
-                else:
-                    print "Macro '"+macro_name+"' is not defined"
+                self.delete_macro(macro_name)
                 return
             if macro_def.lower() == "/s":
                 self.subhelp_macro(macro_name)
                 return
             self.cur_macro_def = macro_def
             self.cur_macro_name = macro_name
-            if macro_def.startswith("!"):
-                self.cur_macro = "def macro(self,*arg):\n  "+macro_def[1:]+"\n"
-            else:
-                self.cur_macro = "def macro(self,*arg):\n  self.onecmd('"+macro_def+"'.format(*arg))\n"
             self.end_macro()
             return
         if self.macros.has_key(macro_name):
@@ -257,8 +290,8 @@ class pronsole(cmd.Cmd):
                 self.save_in_rc("set "+var,"set %s %s" % (var,value))
         except AttributeError:
             print "Unknown variable '%s'" % var
-        except ValueError as ve:
-            print "Bad value for variable '%s', expecting"%var,str(t)[1:-1],"(%s)"%ve.args[0]
+        except ValueError, ve:
+            print "Bad value for variable '%s', expecting %s (%s)" % (var,repr(t)[1:-1],ve.args[0])
     
     def do_set(self,argl):
         args = argl.split(None,1)
@@ -301,7 +334,7 @@ class pronsole(cmd.Cmd):
                 if not rc_cmd.lstrip().startswith("#"):
                     self.onecmd(rc_cmd)
             rc.close()
-            if hasattr(self,"cur_macro"):
+            if hasattr(self,"cur_macro_def"):
                 self.end_macro()
             self.rc_loaded = True
         finally:
@@ -360,8 +393,11 @@ class pronsole(cmd.Cmd):
                 os.rename(rci.name,rci.name+"~old")
             rco.close()
             os.rename(rco.name,self.rc_filename)
-            print "Saved '"+key+"' to '"+self.rc_filename+"'"
-        except Exception as e:
+            if definition != "":
+                print "Saved '"+key+"' to '"+self.rc_filename+"'"
+            else:
+                print "Removed '"+key+"' from '"+self.rc_filename+"'"
+        except Exception, e:
             print "Saving failed for",key+":",str(e)
         finally:
             del rci,rco
@@ -1008,11 +1044,11 @@ class pronsole(cmd.Cmd):
             print "Printer is currently printing. Please pause the print before you issue manual commands."
             return
         if "x" in l.lower():
-            self.p.send_now("G28 X")
+            self.p.send_now("G28 X0")
         if "y" in l.lower():
-            self.p.send_now("G28 Y")
+            self.p.send_now("G28 Y0")
         if "z" in l.lower():
-            self.p.send_now("G28 Z")
+            self.p.send_now("G28 Z0")
         if "e" in l.lower():
             self.p.send_now("G92 E0")
         if not len(l):

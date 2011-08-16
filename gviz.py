@@ -2,7 +2,7 @@ import wx,time
 
 class window(wx.Frame):
     def __init__(self,f,size=(600,600),bedsize=(140,140)):
-        wx.Frame.__init__(self,None,title="Layer view (Use arrow keys to switch layers)",size=(size[0],size[1]))
+        wx.Frame.__init__(self,None,title="Layer view (Use shift+mousewheel to switch layers)",size=(size[0],size[1]))
         self.p=gviz(self,size=size,bedsize=bedsize)
         s=time.time()
         for i in f:
@@ -22,7 +22,7 @@ class window(wx.Frame):
                 self.initpos=None
         elif event.Dragging():
             e=event.GetPositionTuple()
-            if(self.initpos is None):
+            if self.initpos is None or not hasattr(self,"basetrans"):
                 self.initpos=e
                 self.basetrans=self.p.translate
             #print self.p.translate,e,self.initpos
@@ -33,7 +33,7 @@ class window(wx.Frame):
         
         else:
             event.Skip()
-        
+    
     def key(self, event):
         x=event.GetKeyCode()
         #print x
@@ -60,15 +60,19 @@ class gviz(wx.Panel):
         self.lastpos=[0,0,0,0,0]
         self.hilightpos=self.lastpos[:]
         self.Bind(wx.EVT_PAINT,self.paint)
+        self.Bind(wx.EVT_SIZE,lambda *e:(wx.CallAfter(self.repaint),wx.CallAfter(self.Refresh)))
         self.lines={}
         self.pens={}
         self.layers=[]
         self.layerindex=0
+        self.filament_width=0.5 # set it to 0 to disable scaling lines with zoom
         self.scale=[min(float(size[0])/bedsize[0],float(size[1])/bedsize[1])]*2
-        self.translate=[0.0, 0.0]
-        self.mainpen=wx.Pen(wx.Colour(0,0,0))
-        self.hlpen=wx.Pen(wx.Colour(200,50,50))
-        self.fades=[wx.Pen(wx.Colour(150+20*i,150+20*i,150+20*i)) for i in xrange(6)]
+        penwidth = max(1.0,self.filament_width*((self.scale[0]+self.scale[1])/2.0))
+        self.translate=[0.0,0.0]
+        self.mainpen=wx.Pen(wx.Colour(0,0,0),penwidth)
+        self.hlpen=wx.Pen(wx.Colour(200,50,50),penwidth)
+        self.fades=[wx.Pen(wx.Colour(250-0.6**i*100,250-0.6**i*100,200-0.4**i*50),penwidth) for i in xrange(6)]
+        self.penslist=[self.mainpen,self.hlpen]+self.fades
         self.showall=0
         self.hilight=[]
         self.dirty=1
@@ -94,7 +98,7 @@ class gviz(wx.Panel):
             self.layerindex-=1
             self.repaint()
             self.Refresh()
-        
+    
     def setlayer(self,layer):
         try:
             self.layerindex=self.layers.index(layer)
@@ -103,14 +107,18 @@ class gviz(wx.Panel):
             self.showall=0
         except:
             pass
+    
 
     def zoom(self,x,y,factor):
-    	self.scale = [s * factor for s in self.scale]
-    	self.translate = [ x - (x-self.translate[0]) * factor,
-    	                   y - (y-self.translate[1]) * factor]
+        self.scale = [s * factor for s in self.scale]
+        self.translate = [ x - (x-self.translate[0]) * factor,
+                            y - (y-self.translate[1]) * factor]
+        penwidth = max(1.0,self.filament_width*((self.scale[0]+self.scale[1])/2.0))
+        for pen in self.penslist:
+            pen.SetWidth(penwidth)
         #self.dirty=1
         self.repaint()
-    	self.Refresh()
+        self.Refresh()
         
     def repaint(self):
         self.blitmap=wx.EmptyBitmap(self.GetClientSize()[0],self.GetClientSize()[1],-1)
@@ -118,7 +126,16 @@ class gviz(wx.Panel):
         dc.SelectObject(self.blitmap)
         dc.SetBackground(wx.Brush((250,250,200)))
         dc.Clear()
+        dc.SetPen(wx.Pen(wx.Colour(100,100,100)))
+        for i in xrange(max(self.bedsize)/10):
+            dc.DrawLine(self.translate[0],self.translate[1]+i*self.scale[1]*10,self.translate[0]+self.scale[0]*max(self.bedsize),self.translate[1]+i*self.scale[1]*10)
+            dc.DrawLine(self.translate[0]+i*self.scale[0]*10,self.translate[1],self.translate[0]+i*self.scale[0]*10,self.translate[1]+self.scale[1]*max(self.bedsize))
+        dc.SetPen(wx.Pen(wx.Colour(0,0,0)))
+        for i in xrange(max(self.bedsize)/50):
+            dc.DrawLine(self.translate[0],self.translate[1]+i*self.scale[1]*50,self.translate[0]+self.scale[0]*max(self.bedsize),self.translate[1]+i*self.scale[1]*50)
+            dc.DrawLine(self.translate[0]+i*self.scale[0]*50,self.translate[1],self.translate[0]+i*self.scale[0]*50,self.translate[1]+self.scale[1]*max(self.bedsize))
         if not self.showall:
+            self.size = self.GetSize()
             dc.SetBrush(wx.Brush((43,144,255)))
             dc.DrawRectangle(self.size[0]-15,0,15,self.size[1])
             dc.SetBrush(wx.Brush((0,255,0)))
@@ -137,10 +154,10 @@ class gviz(wx.Panel):
                 dc.DrawLineList(l,self.pens[i])
             return
         if self.layerindex<len(self.layers) and self.layers[self.layerindex] in self.lines.keys():
-            for i in range(min(self.layerindex,6))[-6:]:
+            for layer_i in xrange(max(0,self.layerindex-6),self.layerindex):
                 #print i, self.layerindex, self.layerindex-i
-                l=map(scaler,self.lines[self.layers[self.layerindex-i-1]])
-                dc.DrawLineList(l,self.fades[i])
+                l=map(scaler,self.lines[self.layers[layer_i]])
+                dc.DrawLineList(l,self.fades[self.layerindex-layer_i-1])
             l=map(scaler,self.lines[self.layers[self.layerindex]])
             dc.DrawLineList(l,self.pens[self.layers[self.layerindex]])
         l=map(scaler,self.hilight)
@@ -155,7 +172,7 @@ class gviz(wx.Panel):
         sz=self.GetClientSize()
         dc.DrawBitmap(self.blitmap,0,0)
         del dc
-                
+        
     def addgcode(self,gcode="M105",hilight=0):
         gcode=gcode.split("*")[0]
         gcode=gcode.split(";")[0]
